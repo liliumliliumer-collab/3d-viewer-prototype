@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D設備保全プロトタイプ</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        #info-popup {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            display: none; /* 初期状態では非表示 */
+            width: 350px;
+            white-space: pre-wrap; /* 改行を有効にする */
+        }
+        #info-popup h3 { margin-top: 0; }
+        #info-popup a {
+            display: block;
+            margin-top: 10px;
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+        #info-popup a:hover {
+            text-decoration: underline;
+        }
+        #close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: bold;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="info-popup">
+        <span id="close-btn">×</span>
+        <h3 id="info-title"></h3>
+        <div id="info-content"></div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(10, 10, 10);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        const loader = new GLTFLoader();
+        // ★★★ ファイル名を小文字に修正 ★★★
+        const modelPath = './sw_deg.glb';
+        loader.load(modelPath, (gltf) => {
+            scene.add(gltf.scene);
+        }, undefined, (error) => {
+            console.error('モデルの読み込みエラー:', error);
+        });
+
+        const equipmentData = {
+            '脱脂ポンプ_v21': {
+                title: "脱脂スプレーポンプ",
+                content: `<b>機器名:</b>     脱脂スプレーポンプ
+<b>型番:</b>       150×125 FS4J622
+<b>仕様:</b>       4,800 L/min, 17m, 22kw (全鉄)
+<b>部品リスト:</b>
+  - メカニカルシール
+  - Oリング
+<a href="https://product-standard-pump.ebara.com/product/detail/P025705" target="_blank">▶ 製品URLを開く</a>
+<a href="https://docs.google.com/spreadsheets/d/1FnMier9bZP3ZfmUS1PpcMy6XYk4HSqEOEyZVdA9kxrY/edit?usp=sharing" target="_blank">▶ 保全記録を開く</a>`
+            },
+            'ブース': {
+                title: "脱脂ブース",
+                content: `<b>主材料:</b> SS41 2.3t
+<b>保温材:</b> グラスウール 50t
+<a href="pdf/240728SW脱脂スプレー断面図.pdf" target="_blank">▶ 断面図PDFを開く</a>`
+            },
+            '脱脂タンク': {
+                title: "脱脂タンク T-201",
+                content: `<b>容量:</b>     10,000 L
+<b>主材料:</b>   SS41 3.2t
+<b>保温材:</b>   グラスウール 50t
+<b>排水弁:</b>   80A ボール弁
+<a href="pdf/220308SW_AP部品_製作図.pdf" target="_blank">▶ 製作図PDFを開く</a>`
+            }
+        };
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const infoPopup = document.getElementById('info-popup');
+        const infoTitle = document.getElementById('info-title');
+        const infoContent = document.getElementById('info-content');
+        const closeBtn = document.getElementById('close-btn');
+
+        window.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            let foundTarget = false;
+            if (intersects.length > 0) {
+                let clickedObject = intersects[0].object;
+                while (clickedObject) {
+                    if (equipmentData[clickedObject.name]) {
+                        displayInfo(clickedObject.name);
+                        foundTarget = true;
+                        break;
+                    }
+                    clickedObject = clickedObject.parent;
+                }
+            }
+            
+            if (!foundTarget) {
+                infoPopup.style.display = 'none';
+            }
+        });
+
+        function displayInfo(objectName) {
+            const data = equipmentData[objectName];
+            if (data) {
+                infoTitle.innerText = data.title;
+                infoContent.innerHTML = data.content;
+                infoPopup.style.display = 'block';
+            }
+        }
+
+        closeBtn.addEventListener('click', (event) => {
+            infoPopup.style.display = 'none';
+            event.stopPropagation();
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
+```eof
+
+**ステップ3：再度アップロードする**
+
+ファイル名を修正したプロジェクトフォルダを、もう一度ZIPに圧縮し、Netlify Dropにアップロードし直してください。
+
+---
+
+この手順で、今度は正しく3Dモデルが表示されるはずです。お手数ですが、ご確認をお願いいたします。
